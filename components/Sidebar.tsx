@@ -3,7 +3,7 @@ import {
   Layers, Expand, Wand2, History, Star, Scissors, ShoppingBag, 
   UserCheck, Shirt, Presentation, Megaphone, Hand, Heart, Smile, 
   UserCog, ChevronDown, ChevronRight, Briefcase, Palette, LayoutGrid, X, Home, Sun, Moon,
-  Camera, MessageSquare, RefreshCw
+  Camera, MessageSquare, RefreshCw, LogOut, User
 } from 'lucide-react';
 import { AppMode } from '../types';
 
@@ -17,6 +17,8 @@ interface SidebarProps {
   generationCount: number;
   generationLimit: number;
   onResetQuota: () => void;
+  userEmail: string;
+  onLogout: () => void;
 }
 
 // Group Definition
@@ -42,7 +44,9 @@ const Sidebar: React.FC<SidebarProps> = ({
   onToggleTheme,
   generationCount,
   generationLimit,
-  onResetQuota
+  onResetQuota,
+  userEmail,
+  onLogout
 }) => {
   const [openGroups, setOpenGroups] = useState<string[]>(['Essential Tools', 'Business Suite', 'Creative Lab']);
 
@@ -266,6 +270,30 @@ const Sidebar: React.FC<SidebarProps> = ({
                 </div>
              </button>
           </div>
+
+          {/* User Email & Logout Container */}
+          {userEmail && (
+            <div className="p-4 border-t border-gray-100 dark:border-slate-800 bg-gray-50/50 dark:bg-slate-900/30 shrink-0 flex items-center justify-between gap-3">
+               <div className="flex items-center gap-2.5 overflow-hidden">
+                  <div className="w-8 h-8 rounded-full bg-neon/10 text-neon flex items-center justify-center shrink-0">
+                     <User size={16} />
+                  </div>
+                  <div className="flex flex-col text-left overflow-hidden">
+                     <span className="text-[10px] text-slate-400 dark:text-slate-500 font-bold uppercase tracking-wider">Sobat Japri</span>
+                     <span className="text-xs font-semibold text-slate-700 dark:text-slate-300 truncate font-sans" title={userEmail}>
+                        {userEmail}
+                     </span>
+                  </div>
+               </div>
+               <button 
+                 onClick={onLogout} 
+                 title="Keluar (Logout)"
+                 className="p-2 rounded-xl text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/20 transition-all shrink-0"
+               >
+                 <LogOut size={16} />
+               </button>
+            </div>
+          )}
         </div>
       </div>
     </>

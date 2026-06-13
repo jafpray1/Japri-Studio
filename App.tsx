@@ -148,35 +148,64 @@ function App() {
   const [ugcCustomImage, setUgcCustomImage] = useState<UploadedImage | null>(null);
   const [ugcCustomPrompt, setUgcCustomPrompt] = useState('');
 
-  // Daily limit state
-  const [generationCount, setGenerationCount] = useState<number>(() => {
+  // User and Google Apps Script states
+  const [userEmail, setUserEmail] = useState<string>(() => {
     try {
-      const today = new Date().toDateString();
-      const storedDate = localStorage.getItem('generation_count_date');
-      if (storedDate !== today) {
-        localStorage.setItem('generation_count_date', today);
-        localStorage.setItem('generation_count_value', '0');
-        return 0;
-      }
-      const val = localStorage.getItem('generation_count_value');
-      return val ? parseInt(val, 10) : 0;
+      return localStorage.getItem('japri_user_email') || '';
     } catch (e) {
-      return 0;
+      return '';
     }
   });
 
-  const isWithinLimit = (): boolean => {
+  const [appsScriptUrl, setAppsScriptUrl] = useState<string>(() => {
+    try {
+      return import.meta.env.VITE_APPS_SCRIPT_URL || localStorage.getItem('japri_apps_script_url') || '';
+    } catch (e) {
+      return '';
+    }
+  });
+
+  // Daily limit state dependent on the logged in user's email
+  const [generationCount, setGenerationCount] = useState<number>(0);
+
+  React.useEffect(() => {
+    if (!userEmail) {
+      setGenerationCount(0);
+      return;
+    }
     try {
       const today = new Date().toDateString();
-      const storedDate = localStorage.getItem('generation_count_date');
-      let currentCount = generationCount;
+      const emailLower = userEmail.toLowerCase().trim();
+      const storedDate = localStorage.getItem(`gen_date_${emailLower}`);
       if (storedDate !== today) {
-        localStorage.setItem('generation_count_date', today);
-        localStorage.setItem('generation_count_value', '0');
+        localStorage.setItem(`gen_date_${emailLower}`, today);
+        localStorage.setItem(`gen_count_${emailLower}`, '0');
+        setGenerationCount(0);
+      } else {
+        const val = localStorage.getItem(`gen_count_${emailLower}`);
+        setGenerationCount(val ? parseInt(val, 10) : 0);
+      }
+    } catch (e) {
+      // Ignore
+    }
+  }, [userEmail]);
+
+  const isWithinLimit = (): boolean => {
+    if (!userEmail) {
+      alert("Harap login terlebih dahulu.");
+      return false;
+    }
+    try {
+      const today = new Date().toDateString();
+      const emailLower = userEmail.toLowerCase().trim();
+      const storedDate = localStorage.getItem(`gen_date_${emailLower}`);
+      if (storedDate !== today) {
+        localStorage.setItem(`gen_date_${emailLower}`, today);
+        localStorage.setItem(`gen_count_${emailLower}`, '0');
         setGenerationCount(0);
         return true;
       }
-      if (currentCount >= 10) {
+      if (generationCount >= 10) {
         alert("⚠️ Kuota Harian Tercapai!\nSobat Japri telah menggunakan batas maksimum 10 generate gambar per hari. Silahkan coba lagi besok!");
         return false;
       }
@@ -187,30 +216,34 @@ function App() {
   };
 
   const incrementGeneration = (count = 1) => {
+    if (!userEmail) return;
     try {
       const today = new Date().toDateString();
-      const storedDate = localStorage.getItem('generation_count_date');
+      const emailLower = userEmail.toLowerCase().trim();
+      const storedDate = localStorage.getItem(`gen_date_${emailLower}`);
       let currentCount = generationCount;
       if (storedDate !== today) {
-        localStorage.setItem('generation_count_date', today);
-        localStorage.setItem('generation_count_value', '0');
+        localStorage.setItem(`gen_date_${emailLower}`, today);
+        localStorage.setItem(`gen_count_${emailLower}`, '0');
         setGenerationCount(count);
-        localStorage.setItem('generation_count_value', count.toString());
+        localStorage.setItem(`gen_count_${emailLower}`, count.toString());
         return;
       }
       const newCount = Math.min(10, currentCount + count);
       setGenerationCount(newCount);
-      localStorage.setItem('generation_count_value', newCount.toString());
+      localStorage.setItem(`gen_count_${emailLower}`, newCount.toString());
     } catch (e) {
       // Ignored
     }
   };
 
   const resetQuota = () => {
+    if (!userEmail) return;
     try {
       const today = new Date().toDateString();
-      localStorage.setItem('generation_count_date', today);
-      localStorage.setItem('generation_count_value', '0');
+      const emailLower = userEmail.toLowerCase().trim();
+      localStorage.setItem(`gen_date_${emailLower}`, today);
+      localStorage.setItem(`gen_count_${emailLower}`, '0');
       setGenerationCount(0);
     } catch (e) {
       // Ignored
@@ -705,6 +738,187 @@ function App() {
 
   const showSharedResultPanel = currentMode !== AppMode.UGC && currentMode !== AppMode.DASHBOARD && currentMode !== AppMode.EDIT && currentMode !== AppMode.CHAT; // Hide ResultPanel for Chat
 
+  // Handle Apps Script login verification
+  const [loginLoading, setLoginLoading] = useState(false);
+  const [loginError, setLoginError] = useState('');
+  const [showConfig, setShowConfig] = useState(false);
+
+  const handleLogin = async (emailToLogin: string) => {
+    const trimmedEmail = emailToLogin.trim();
+    if (!trimmedEmail) {
+      setLoginError('Harap masukkan alamat email.');
+      return;
+    }
+    
+    // Check if AppScript URL is configured
+    if (!appsScriptUrl) {
+      setLoginError('');
+      try {
+        localStorage.setItem('japri_user_email', trimmedEmail);
+        setUserEmail(trimmedEmail);
+        alert(`ℹ️ Demo Mode: Berhasil masuk sebagai ${trimmedEmail}.\n\n(Anda belum mengisi URL Google Apps Script. Di lingkungan demo, email apapun diperbolehkan. Pasang URL Apps Script di tombol pengaturan di bawah jika ingin membatasi sesuai data Google Sheet!)`);
+      } catch (e) {
+        // block error
+      }
+      return;
+    }
+
+    setLoginLoading(true);
+    setLoginError('');
+    try {
+      // Fetch status verify
+      const response = await fetch(`${appsScriptUrl}?email=${encodeURIComponent(trimmedEmail)}`);
+      const data = await response.json();
+      
+      if (data.status === 'sukses') {
+        localStorage.setItem('japri_user_email', trimmedEmail);
+        setUserEmail(trimmedEmail);
+      } else {
+        setLoginError('Akses ditolak: Alamat email Anda belum terdaftar di database Japri Studio.');
+      }
+    } catch (e) {
+      console.error(e);
+      setLoginError('Gagal terkoneksi ke Google Apps Script. Pastikan URL Web App Anda benar, di-Deploy sebagai "Anyone", dan Anda mengizinkan CORS.');
+    } finally {
+      setLoginLoading(false);
+    }
+  };
+
+  const handleLogout = () => {
+    try {
+      localStorage.removeItem('japri_user_email');
+      setUserEmail('');
+    } catch (e) {
+      // Ignore
+    }
+  };
+
+  const handleSaveAndTestUrl = (url: string) => {
+    try {
+      const cleanUrl = url.trim();
+      localStorage.setItem('japri_apps_script_url', cleanUrl);
+      setAppsScriptUrl(cleanUrl);
+      alert('URL Google Apps Script berhasil disimpan!');
+    } catch (e) {
+      // Ignore
+    }
+  };
+
+  if (!userEmail) {
+    return (
+      <div className="flex min-h-screen w-screen items-center justify-center bg-gray-50 dark:bg-slate-950 px-4 transition-colors duration-300">
+        <div className="w-full max-w-md space-y-6">
+          <div className="text-center space-y-2">
+            {/* Logo Group */}
+            <div className="inline-flex h-16 w-16 items-center justify-center rounded-2xl bg-neon text-white font-black text-2xl shadow-lg shadow-neon/20 mb-2 transform hover:scale-105 transition-transform">
+              JS
+            </div>
+            <h1 className="text-3xl font-extrabold tracking-tight text-slate-900 dark:text-white">
+              Japri Studio
+            </h1>
+            <p className="text-sm text-slate-500 dark:text-slate-400">
+              AI Image Creator by Japri AI
+            </p>
+          </div>
+
+          <div className="bg-white dark:bg-slate-900 border border-gray-100 dark:border-slate-800 rounded-3xl p-6 md:p-8 shadow-xl shadow-slate-100 dark:shadow-none space-y-6">
+            <div className="space-y-2">
+              <h2 className="text-lg font-bold text-slate-800 dark:text-slate-200">
+                Silahkan Masuk
+              </h2>
+              <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed font-sans">
+                Untuk bantuan hubungi admin di 081321910880
+              </p>
+            </div>
+
+            <form onSubmit={(e) => {
+              e.preventDefault();
+              const formData = new FormData(e.currentTarget);
+              const emailValue = formData.get('email') as string;
+              handleLogin(emailValue);
+            }} className="space-y-4">
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-slate-600 dark:text-slate-400">
+                  Alamat Email (Terdaftar)
+                </label>
+                <input
+                  name="email"
+                  type="email"
+                  required
+                  placeholder="masukkan@email.com"
+                  className="w-full p-3.5 rounded-xl border border-gray-200 dark:border-slate-700 text-sm focus:outline-none focus:ring-2 focus:ring-neon bg-gray-50 dark:bg-slate-800/50 text-slate-800 dark:text-slate-200 font-sans"
+                />
+              </div>
+
+              {loginError && (
+                <div className="p-3 text-xs text-red-500 bg-red-50 dark:bg-red-950/20 border border-red-100 dark:border-red-900/30 rounded-xl leading-relaxed font-semibold">
+                  {loginError}
+                </div>
+              )}
+
+              <button
+                type="submit"
+                disabled={loginLoading}
+                className="w-full py-3.5 px-4 rounded-xl bg-neon hover:bg-neon-hover text-white font-bold text-sm shadow-md shadow-neon/10 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+              >
+                {loginLoading ? (
+                  <>
+                    <svg className="animate-spin h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                    </svg>
+                    Memverifikasi...
+                  </>
+                ) : (
+                  'Masuk ke Studio'
+                )}
+              </button>
+            </form>
+
+            {/* Quick config settings inside Login for easy testing */}
+            <div className="border-t border-gray-100 dark:border-slate-800 pt-4">
+              <button
+                type="button"
+                onClick={() => setShowConfig(!showConfig)}
+                className="w-full flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 hover:text-neon dark:hover:text-neon transition-colors font-semibold"
+              >
+                <span>🛠️ Pengaturan URL Google Apps Script</span>
+                <span className="text-[10px]">{showConfig ? 'Sembunyikan' : 'Buka'}</span>
+              </button>
+
+              {showConfig && (
+                <div className="mt-3 p-4 rounded-xl bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 space-y-3">
+                  <p className="text-[11px] text-slate-400 leading-relaxed font-sans">
+                    Tempelkan <b>Web App URL</b> yang Anda dapat setelah menekan <i>Deploy &gt; New deployment &gt; Who has access: Anyone</i> di Google Apps Script editor Anda.
+                  </p>
+                  <div className="space-y-1.5">
+                    <input
+                      id="apps_script_url_input"
+                      type="url"
+                      placeholder="https://script.google.com/macros/s/.../exec"
+                      defaultValue={appsScriptUrl}
+                      className="w-full p-2.5 text-xs rounded-lg border border-gray-300 dark:border-slate-700 focus:ring-1 focus:ring-neon focus:outline-none dark:bg-slate-800 text-slate-800 dark:text-slate-100 font-mono"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const val = (document.getElementById('apps_script_url_input') as HTMLInputElement)?.value;
+                        handleSaveAndTestUrl(val || '');
+                      }}
+                      className="px-3 py-1.5 bg-slate-800 dark:bg-slate-700 hover:bg-slate-700 dark:hover:bg-slate-600 text-white text-xs font-semibold rounded-lg transition-colors"
+                    >
+                      Simpan URL
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-white dark:bg-slate-950 text-slate-900 dark:text-white transition-colors">
       <Sidebar 
@@ -717,6 +931,8 @@ function App() {
         generationCount={generationCount}
         generationLimit={10}
         onResetQuota={resetQuota}
+        userEmail={userEmail}
+        onLogout={handleLogout}
       />
       
       <div className="flex-1 flex flex-col h-full overflow-hidden relative">

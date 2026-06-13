@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="id">
+    
+<head>    
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">   
+    <title>Akses Member</title>
+    <style>
+        :root {
+            --primary: #2563eb;
+            --bg-gradient: linear-gradient(135deg, #6366f1 0%, #a855f7 100%);
+            --glass: rgba(255, 255, 255, 0.95);
+        }
+        * { box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: var(--bg-gradient);
+            background-attachment: fixed;
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            margin: 0;
+            padding: 20px;
+        }
+        .glass-card {
+            background: var(--glass);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            padding: 30px 20px;
+            width: 100%;
+            max-width: 380px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+            text-align: center;
+        }
+        h2 { color: #1f2937; font-size: 1.4rem; margin-top: 10px; }
+        p { color: #6b7280; font-size: 0.9rem; line-height: 1.5; margin-bottom: 25px; }
+        input {
+            width: 100%;
+            padding: 14px;
+            border: 1.5px solid #e5e7eb;
+            border-radius: 12px;
+            font-size: 16px;
+            outline: none;
+            margin-bottom: 10px;
+        }
+        button {
+            width: 100%;
+            padding: 14px;
+            border: none;
+            border-radius: 12px;
+            font-weight: 600;
+            cursor: pointer;
+        }
+        .btn-login { background: var(--primary); color: white; }
+        .btn-tools { 
+            background: #10b981; color: white; text-decoration: none; 
+            display: block; padding: 14px; border-radius: 12px; font-weight: 600; margin-top: 10px;
+        }
+        .btn-logout { background: #f3f4f6; color: #6b7280; margin-top: 25px; font-size: 0.85rem; }
+        .error-msg { color: #ef4444; font-size: 0.8rem; margin-bottom: 15px; display: none; font-weight: 500; }
+        #login-area { display: block; }
+        #dashboard-area { display: none; }
+        .icon-box { font-size: 2.5rem; margin-bottom: 10px; }
+    </style>
+</head>
+<body>
+    <div class="glass-card">
+        <div id="login-area">
+            <div class="icon-box">🔐</div>
+            <h2>Masuk Aplikasi</h2>
+            <p>Silakan masukkan alamat email yang Anda gunakan saat pembelian.</p>
+            <div id="pesanError" class="error-msg">Email tidak ditemukan!</div>
+            <input type="email" id="emailInput" placeholder="contoh@gmail.com">
+            <button onclick="cekLogin()" id="btnMasuk" class="btn-login">MASUK SEKARANG</button>
+        </div>
+
+        <div id="dashboard-area">
+            <div class="icon-box">🎉</div>
+            <h2>Selamat Datang!</h2>
+            <p>Akses Tools Anda sudah siap. Klik tombol di bawah untuk mulai.</p>
+            <a href="https://japri-studio-551626397514.asia-southeast1.run.app/" target="_blank" class="btn-tools">BUKA TOOLS SEKARANG</a>
+            <button onclick="logout()" class="btn-logout">Keluar / Logout</button>
+        </div>
+    </div>
+
+    <script>
+        const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwn6BVEPIj-peGt_oZ4T7E5cu-Jme8raaSe0oQcEG_EUoicvPASUNsps7wUeb_m5lRB/exec"; 
+
+        function cekLogin() {
+            const email = document.getElementById('emailInput').value.trim();
+            const btn = document.getElementById('btnMasuk');
+            const errorMsg = document.getElementById('pesanError');
+            if(!email) return alert("Masukkan email!");
+            btn.innerText = "Memverifikasi...";
+            btn.disabled = true;
+            errorMsg.style.display = 'none';
+            fetch(SCRIPT_URL + "?email=" + encodeURIComponent(email))
+            .then(res => res.json())
+            .then(data => {
+                if (data.status === "sukses") {
+                    localStorage.setItem("userSession", "active");
+                    tampilkanDashboard();
+                } else {
+                    errorMsg.style.display = 'block';
+                    btn.innerText = "MASUK SEKARANG";
+                    btn.disabled = false;
+                }
+            }).catch(() => {
+                alert("Gagal koneksi!");
+                btn.disabled = false;
+            });
+        }
+        function tampilkanDashboard() {
+            document.getElementById('login-area').style.display = 'none';
+            document.getElementById('dashboard-area').style.display = 'block';
+        }
+        function logout() {
+            localStorage.removeItem("userSession");
+            location.reload();
+        }
+        if(localStorage.getItem("userSession") === "active") tampilkanDashboard();
+    </script>
+</body>
+</html>
