@@ -159,7 +159,7 @@ function App() {
 
   const [appsScriptUrl, setAppsScriptUrl] = useState<string>(() => {
     try {
-      const newUrl = 'https://script.google.com/macros/s/AKfycbyMp0mz2I9DKAfmoH8zkeqfJv4uZWOuqSd3oBKN_FMDlBhHB7iX00_i7KZXqrHdJSjd/exec';
+      const newUrl = 'https://script.google.com/macros/s/AKfycbwcq7HaM6Cu65jtMYqScgiNt4YX7SlYcOv4_I7VG4DEcnEsvyGZOCvwjyoBNGHUYUHo/exec';
       let stored = localStorage.getItem('japri_apps_script_url') || '';
       
       // Jika url tersimpan adalah url lama, update ke url yang baru
@@ -169,7 +169,7 @@ function App() {
       }
       return import.meta.env.VITE_APPS_SCRIPT_URL || stored || newUrl;
     } catch (e) {
-      return 'https://script.google.com/macros/s/AKfycbyMp0mz2I9DKAfmoH8zkeqfJv4uZWOuqSd3oBKN_FMDlBhHB7iX00_i7KZXqrHdJSjd/exec';
+      return 'https://script.google.com/macros/s/AKfycbwcq7HaM6Cu65jtMYqScgiNt4YX7SlYcOv4_I7VG4DEcnEsvyGZOCvwjyoBNGHUYUHo/exec';
     }
   });
 
