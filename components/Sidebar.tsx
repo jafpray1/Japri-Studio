@@ -226,13 +226,6 @@ const Sidebar: React.FC<SidebarProps> = ({
                 <div className="flex items-center gap-1.5 text-xs font-bold text-slate-700 dark:text-slate-300">
                    <span>Kuota Generate Gambar</span>
                 </div>
-                <button 
-                  onClick={onResetQuota} 
-                  title="Reset Kuota (Testing)" 
-                  className="p-1 rounded-md text-slate-400 hover:text-neon hover:bg-gray-100 dark:hover:bg-slate-800 transition-all transform hover:rotate-180 duration-500"
-                >
-                  <RefreshCw size={12} />
-                </button>
              </div>
              
              {/* Progress Bar Container */}
