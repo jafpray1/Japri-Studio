@@ -159,9 +159,16 @@ function App() {
 
   const [appsScriptUrl, setAppsScriptUrl] = useState<string>(() => {
     try {
-      return import.meta.env.VITE_APPS_SCRIPT_URL || localStorage.getItem('japri_apps_script_url') || 'https://script.google.com/macros/s/AKfycbwzxQmTVWoQ96jYooQNS9q-JDjFCaAfUHlmO-hx9pnYJ8riycA26V52nYsMrigO8AnU/exec';
+      const oldUrl = 'https://script.google.com/macros/s/AKfycbwzxQmTVWoQ96jYooQNS9q-JDjFCaAfUHlmO-hx9pnYJ8riycA26V52nYsMrigO8AnU/exec';
+      const newUrl = 'https://script.google.com/macros/s/AKfycbwqhgQI9uwB8zlixWTGGqWHqGpzwgXMeH-ml7Jv6RCXIphtjPQLifb7_TaB23_lwm5v/exec';
+      let stored = localStorage.getItem('japri_apps_script_url') || '';
+      if (stored === oldUrl) {
+        localStorage.setItem('japri_apps_script_url', newUrl);
+        stored = newUrl;
+      }
+      return import.meta.env.VITE_APPS_SCRIPT_URL || stored || newUrl;
     } catch (e) {
-      return 'https://script.google.com/macros/s/AKfycbwzxQmTVWoQ96jYooQNS9q-JDjFCaAfUHlmO-hx9pnYJ8riycA26V52nYsMrigO8AnU/exec';
+      return 'https://script.google.com/macros/s/AKfycbwqhgQI9uwB8zlixWTGGqWHqGpzwgXMeH-ml7Jv6RCXIphtjPQLifb7_TaB23_lwm5v/exec';
     }
   });
 
