@@ -874,45 +874,6 @@ function App() {
                 )}
               </button>
             </form>
-
-            {/* Quick config settings inside Login for easy testing */}
-            <div className="border-t border-gray-100 dark:border-slate-800 pt-4">
-              <button
-                type="button"
-                onClick={() => setShowConfig(!showConfig)}
-                className="w-full flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 hover:text-neon dark:hover:text-neon transition-colors font-semibold"
-              >
-                <span>🛠️ Pengaturan URL Google Apps Script</span>
-                <span className="text-[10px]">{showConfig ? 'Sembunyikan' : 'Buka'}</span>
-              </button>
-
-              {showConfig && (
-                <div className="mt-3 p-4 rounded-xl bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 space-y-3">
-                  <p className="text-[11px] text-slate-400 leading-relaxed font-sans">
-                    Tempelkan <b>Web App URL</b> yang Anda dapat setelah menekan <i>Deploy &gt; New deployment &gt; Who has access: Anyone</i> di Google Apps Script editor Anda.
-                  </p>
-                  <div className="space-y-1.5">
-                    <input
-                      id="apps_script_url_input"
-                      type="url"
-                      placeholder="https://script.google.com/macros/s/.../exec"
-                      defaultValue={appsScriptUrl}
-                      className="w-full p-2.5 text-xs rounded-lg border border-gray-300 dark:border-slate-700 focus:ring-1 focus:ring-neon focus:outline-none dark:bg-slate-800 text-slate-800 dark:text-slate-100 font-mono"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const val = (document.getElementById('apps_script_url_input') as HTMLInputElement)?.value;
-                        handleSaveAndTestUrl(val || '');
-                      }}
-                      className="px-3 py-1.5 bg-slate-800 dark:bg-slate-700 hover:bg-slate-700 dark:hover:bg-slate-600 text-white text-xs font-semibold rounded-lg transition-colors"
-                    >
-                      Simpan URL
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
           </div>
         </div>
       </div>
