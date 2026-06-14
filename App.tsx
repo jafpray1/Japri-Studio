@@ -159,9 +159,9 @@ function App() {
 
   const [appsScriptUrl, setAppsScriptUrl] = useState<string>(() => {
     try {
-      return import.meta.env.VITE_APPS_SCRIPT_URL || localStorage.getItem('japri_apps_script_url') || '';
+      return import.meta.env.VITE_APPS_SCRIPT_URL || localStorage.getItem('japri_apps_script_url') || 'https://script.google.com/macros/s/AKfycbwzxQmTVWoQ96jYooQNS9q-JDjFCaAfUHlmO-hx9pnYJ8riycA26V52nYsMrigO8AnU/exec';
     } catch (e) {
-      return '';
+      return 'https://script.google.com/macros/s/AKfycbwzxQmTVWoQ96jYooQNS9q-JDjFCaAfUHlmO-hx9pnYJ8riycA26V52nYsMrigO8AnU/exec';
     }
   });
 
