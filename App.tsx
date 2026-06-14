@@ -159,31 +159,63 @@ function App() {
 
   const [appsScriptUrl, setAppsScriptUrl] = useState<string>(() => {
     try {
-      const oldUrl = 'https://script.google.com/macros/s/AKfycbwzxQmTVWoQ96jYooQNS9q-JDjFCaAfUHlmO-hx9pnYJ8riycA26V52nYsMrigO8AnU/exec';
-      const newUrl = 'https://script.google.com/macros/s/AKfycbwqhgQI9uwB8zlixWTGGqWHqGpzwgXMeH-ml7Jv6RCXIphtjPQLifb7_TaB23_lwm5v/exec';
+      const newUrl = 'https://script.google.com/macros/s/AKfycbyMp0mz2I9DKAfmoH8zkeqfJv4uZWOuqSd3oBKN_FMDlBhHB7iX00_i7KZXqrHdJSjd/exec';
       let stored = localStorage.getItem('japri_apps_script_url') || '';
-      if (stored === oldUrl) {
+      
+      // Jika url tersimpan adalah url lama, update ke url yang baru
+      if (stored && stored !== newUrl) {
         localStorage.setItem('japri_apps_script_url', newUrl);
         stored = newUrl;
       }
       return import.meta.env.VITE_APPS_SCRIPT_URL || stored || newUrl;
     } catch (e) {
-      return 'https://script.google.com/macros/s/AKfycbwqhgQI9uwB8zlixWTGGqWHqGpzwgXMeH-ml7Jv6RCXIphtjPQLifb7_TaB23_lwm5v/exec';
+      return 'https://script.google.com/macros/s/AKfycbyMp0mz2I9DKAfmoH8zkeqfJv4uZWOuqSd3oBKN_FMDlBhHB7iX00_i7KZXqrHdJSjd/exec';
     }
   });
 
   // Daily limit state dependent on the logged in user's email
   const [generationCount, setGenerationCount] = useState<number>(0);
+  const [generationLimit, setGenerationLimit] = useState<number>(10);
+
+  const fetchQuotaStatus = async (email: string) => {
+    if (!email || !appsScriptUrl) return;
+    try {
+      const response = await fetch(`${appsScriptUrl}?email=${encodeURIComponent(email)}`);
+      const data = await response.json();
+      if (data.status === 'sukses') {
+        const emailLower = email.toLowerCase().trim();
+        if (typeof data.used === 'number') {
+          setGenerationCount(data.used);
+          localStorage.setItem(`gen_count_${emailLower}`, data.used.toString());
+        }
+        if (typeof data.limit === 'number') {
+          setGenerationLimit(data.limit);
+          localStorage.setItem(`gen_limit_${emailLower}`, data.limit.toString());
+        }
+      }
+    } catch (e) {
+      console.warn('Gagal memuat kuota langsung dari Apps Script, menggunakan cache lokal:', e);
+    }
+  };
 
   React.useEffect(() => {
     if (!userEmail) {
       setGenerationCount(0);
+      setGenerationLimit(10);
       return;
     }
     try {
       const today = new Date().toDateString();
       const emailLower = userEmail.toLowerCase().trim();
       const storedDate = localStorage.getItem(`gen_date_${emailLower}`);
+      const storedLimit = localStorage.getItem(`gen_limit_${emailLower}`);
+      
+      if (storedLimit) {
+        setGenerationLimit(parseInt(storedLimit, 10));
+      } else {
+        setGenerationLimit(10);
+      }
+
       if (storedDate !== today) {
         localStorage.setItem(`gen_date_${emailLower}`, today);
         localStorage.setItem(`gen_count_${emailLower}`, '0');
@@ -195,60 +227,64 @@ function App() {
     } catch (e) {
       // Ignore
     }
-  }, [userEmail]);
+
+    // Ambil data terbaru langsung dari Google Sheet via Apps Script
+    fetchQuotaStatus(userEmail);
+  }, [userEmail, appsScriptUrl]);
 
   const isWithinLimit = (): boolean => {
     if (!userEmail) {
       alert("Harap login terlebih dahulu.");
       return false;
     }
-    try {
-      const today = new Date().toDateString();
-      const emailLower = userEmail.toLowerCase().trim();
-      const storedDate = localStorage.getItem(`gen_date_${emailLower}`);
-      if (storedDate !== today) {
-        localStorage.setItem(`gen_date_${emailLower}`, today);
-        localStorage.setItem(`gen_count_${emailLower}`, '0');
-        setGenerationCount(0);
-        return true;
-      }
-      if (generationCount >= 10) {
-        alert("⚠️ Kuota Harian Tercapai!\nSobat Japri telah menggunakan batas maksimum 10 generate gambar per hari. Silahkan coba lagi besok!");
-        return false;
-      }
-      return true;
-    } catch (e) {
-      return true;
+    if (generationCount >= generationLimit) {
+      alert(`⚠️ Kuota Harian Tercapai!\nSobat Japri telah menggunakan batas maksimum ${generationLimit} generate gambar per hari. Silahkan hubungi admin di 081321910880 untuk penambahan kuota harian!`);
+      return false;
     }
+    return true;
   };
 
-  const incrementGeneration = (count = 1) => {
+  const incrementGeneration = async (count = 1) => {
     if (!userEmail) return;
+    const emailLower = userEmail.toLowerCase().trim();
+    
+    // Desentralisasikan peningkatan local state untuk kenyamanan instan user
+    const targetCount = generationCount + count;
+    setGenerationCount(targetCount);
     try {
       const today = new Date().toDateString();
-      const emailLower = userEmail.toLowerCase().trim();
-      const storedDate = localStorage.getItem(`gen_date_${emailLower}`);
-      let currentCount = generationCount;
-      if (storedDate !== today) {
-        localStorage.setItem(`gen_date_${emailLower}`, today);
-        localStorage.setItem(`gen_count_${emailLower}`, '0');
-        setGenerationCount(count);
-        localStorage.setItem(`gen_count_${emailLower}`, count.toString());
-        return;
-      }
-      const newCount = Math.min(10, currentCount + count);
-      setGenerationCount(newCount);
-      localStorage.setItem(`gen_count_${emailLower}`, newCount.toString());
+      localStorage.setItem(`gen_date_${emailLower}`, today);
+      localStorage.setItem(`gen_count_${emailLower}`, targetCount.toString());
     } catch (e) {
       // Ignored
     }
+
+    // Post/Update ke Google Sheet via Apps Script secara asynchronous
+    if (appsScriptUrl) {
+      try {
+        const response = await fetch(`${appsScriptUrl}?action=inc&email=${encodeURIComponent(emailLower)}`);
+        const data = await response.json();
+        if (data.status === 'sukses') {
+          if (typeof data.used === 'number') {
+            setGenerationCount(data.used);
+            localStorage.setItem(`gen_count_${emailLower}`, data.used.toString());
+          }
+          if (typeof data.limit === 'number') {
+            setGenerationLimit(data.limit);
+            localStorage.setItem(`gen_limit_${emailLower}`, data.limit.toString());
+          }
+        }
+      } catch (e) {
+        console.error('Gagal memperbarui kuota ke Google Sheet:', e);
+      }
+    }
   };
 
-  const resetQuota = () => {
+  const resetQuota = async () => {
     if (!userEmail) return;
+    const emailLower = userEmail.toLowerCase().trim();
     try {
       const today = new Date().toDateString();
-      const emailLower = userEmail.toLowerCase().trim();
       localStorage.setItem(`gen_date_${emailLower}`, today);
       localStorage.setItem(`gen_count_${emailLower}`, '0');
       setGenerationCount(0);
@@ -778,7 +814,17 @@ function App() {
       const data = await response.json();
       
       if (data.status === 'sukses') {
+        const emailLower = trimmedEmail.toLowerCase().trim();
         localStorage.setItem('japri_user_email', trimmedEmail);
+        
+        if (typeof data.used === 'number') {
+          setGenerationCount(data.used);
+          localStorage.setItem(`gen_count_${emailLower}`, data.used.toString());
+        }
+        if (typeof data.limit === 'number') {
+          setGenerationLimit(data.limit);
+          localStorage.setItem(`gen_limit_${emailLower}`, data.limit.toString());
+        }
         setUserEmail(trimmedEmail);
       } else {
         setLoginError('Akses ditolak: Alamat email Anda belum terdaftar di database Japri Studio.');
@@ -897,7 +943,7 @@ function App() {
         isOpen={isSidebarOpen}
         onClose={() => setIsSidebarOpen(false)}
         generationCount={generationCount}
-        generationLimit={10}
+        generationLimit={generationLimit}
         onResetQuota={resetQuota}
         userEmail={userEmail}
         onLogout={handleLogout}
