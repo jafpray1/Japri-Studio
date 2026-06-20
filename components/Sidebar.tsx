@@ -232,18 +232,18 @@ const Sidebar: React.FC<SidebarProps> = ({
              <div className="w-full h-2 rounded-full bg-slate-200 dark:bg-slate-800 overflow-hidden mb-1.5 relative">
                 <div 
                   className={`h-full rounded-full transition-all duration-500 ease-out ${
-                    generationCount >= 10 
+                    generationCount >= generationLimit 
                       ? 'bg-red-500' 
-                      : generationCount >= 8 
+                      : generationCount >= Math.floor(generationLimit * 0.8) 
                         ? 'bg-amber-500' 
                         : 'bg-neon'
                   }`} 
-                  style={{ width: `${(generationCount / 10) * 100}%` }}
+                  style={{ width: `${Math.min(100, (generationCount / (generationLimit || 1)) * 100)}%` }}
                 />
              </div>
              
              <div className="flex items-center justify-between text-[10px] text-slate-500 dark:text-slate-400 font-medium font-mono">
-                <span>{generationCount} dari 10 digunakan</span>
+                <span>{generationCount} dari {generationLimit} digunakan</span>
                 <span>Reset harian</span>
              </div>
           </div>

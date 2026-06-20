@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Menu } from 'lucide-react';
+import { Menu, Settings } from 'lucide-react';
 import Sidebar from './components/Sidebar';
 import Dashboard from './components/Dashboard';
 import InputPanel from './components/InputPanel';
@@ -159,17 +159,23 @@ function App() {
 
   const [appsScriptUrl, setAppsScriptUrl] = useState<string>(() => {
     try {
-      const newUrl = 'https://script.google.com/macros/s/AKfycbwcq7HaM6Cu65jtMYqScgiNt4YX7SlYcOv4_I7VG4DEcnEsvyGZOCvwjyoBNGHUYUHo/exec';
+      const newUrl = 'https://script.google.com/macros/s/AKfycbwa5LEvFi7lMIsh75qpeB4FUjmOQHgpAzW7ar-29B0rL4NoEhVxHU93c4SNEEW70ESn/exec';
+      const outdatedDefaults = [
+        'https://script.google.com/macros/s/AKfycbwzxQmTVWoQ96jYooQNS9q-JDjFCaAfUHlmO-hx9pnYJ8riycA26V52nYsMrigO8AnU/exec',
+        'https://script.google.com/macros/s/AKfycbwqhgQI9uwB8zlixWTGGqWHqGpzwgXMeH-ml7Jv6RCXIphtjPQLifb7_TaB23_lwm5v/exec',
+        'https://script.google.com/macros/s/AKfycbyMp0mz2I9DKAfmoH8zkeqfJv4uZWOuqSd3oBKN_FMDlBhHB7iX00_i7KZXqrHdJSjd/exec',
+        'https://script.google.com/macros/s/AKfycbwcq7HaM6Cu65jtMYqScgiNt4YX7SlYcOv4_I7VG4DEcnEsvyGZOCvwjyoBNGHUYUHo/exec'
+      ];
       let stored = localStorage.getItem('japri_apps_script_url') || '';
       
-      // Jika url tersimpan adalah url lama, update ke url yang baru
-      if (stored && stored !== newUrl) {
+      // Jika url tersimpan adalah url sistem bawaan yang lama, update ke url yang baru
+      if (stored && outdatedDefaults.some(old => stored === old || stored.trim() === old)) {
         localStorage.setItem('japri_apps_script_url', newUrl);
         stored = newUrl;
       }
-      return import.meta.env.VITE_APPS_SCRIPT_URL || stored || newUrl;
+      return stored || import.meta.env.VITE_APPS_SCRIPT_URL || newUrl;
     } catch (e) {
-      return 'https://script.google.com/macros/s/AKfycbwcq7HaM6Cu65jtMYqScgiNt4YX7SlYcOv4_I7VG4DEcnEsvyGZOCvwjyoBNGHUYUHo/exec';
+      return 'https://script.google.com/macros/s/AKfycbwa5LEvFi7lMIsh75qpeB4FUjmOQHgpAzW7ar-29B0rL4NoEhVxHU93c4SNEEW70ESn/exec';
     }
   });
 
@@ -184,13 +190,17 @@ function App() {
       const data = await response.json();
       if (data.status === 'sukses') {
         const emailLower = email.toLowerCase().trim();
-        if (typeof data.used === 'number') {
-          setGenerationCount(data.used);
-          localStorage.setItem(`gen_count_${emailLower}`, data.used.toString());
+        
+        const usedVal = data.used !== undefined && data.used !== null ? parseInt(data.used.toString(), 10) : NaN;
+        if (!isNaN(usedVal)) {
+          setGenerationCount(usedVal);
+          localStorage.setItem(`gen_count_${emailLower}`, usedVal.toString());
         }
-        if (typeof data.limit === 'number') {
-          setGenerationLimit(data.limit);
-          localStorage.setItem(`gen_limit_${emailLower}`, data.limit.toString());
+        
+        const limitVal = data.limit !== undefined && data.limit !== null ? parseInt(data.limit.toString(), 10) : NaN;
+        if (!isNaN(limitVal)) {
+          setGenerationLimit(limitVal);
+          localStorage.setItem(`gen_limit_${emailLower}`, limitVal.toString());
         }
       }
     } catch (e) {
@@ -265,13 +275,15 @@ function App() {
         const response = await fetch(`${appsScriptUrl}?action=inc&email=${encodeURIComponent(emailLower)}`);
         const data = await response.json();
         if (data.status === 'sukses') {
-          if (typeof data.used === 'number') {
-            setGenerationCount(data.used);
-            localStorage.setItem(`gen_count_${emailLower}`, data.used.toString());
+          const usedVal = data.used !== undefined && data.used !== null ? parseInt(data.used.toString(), 10) : NaN;
+          if (!isNaN(usedVal)) {
+            setGenerationCount(usedVal);
+            localStorage.setItem(`gen_count_${emailLower}`, usedVal.toString());
           }
-          if (typeof data.limit === 'number') {
-            setGenerationLimit(data.limit);
-            localStorage.setItem(`gen_limit_${emailLower}`, data.limit.toString());
+          const limitVal = data.limit !== undefined && data.limit !== null ? parseInt(data.limit.toString(), 10) : NaN;
+          if (!isNaN(limitVal)) {
+            setGenerationLimit(limitVal);
+            localStorage.setItem(`gen_limit_${emailLower}`, limitVal.toString());
           }
         }
       } catch (e) {
@@ -809,29 +821,76 @@ function App() {
     setLoginLoading(true);
     setLoginError('');
     try {
-      // Fetch status verify
-      const response = await fetch(`${appsScriptUrl}?email=${encodeURIComponent(trimmedEmail)}`);
-      const data = await response.json();
+      const cleanUrl = appsScriptUrl.trim();
+      // Ensure the URL is correctly set up as a standard doGet query
+      const targetQuery = `${cleanUrl}${cleanUrl.includes('?') ? '&' : '?'}email=${encodeURIComponent(trimmedEmail)}`;
       
-      if (data.status === 'sukses') {
+      const response = await fetch(targetQuery);
+      if (!response.ok) {
+        throw new Error(`Koneksi HTTP Error ${response.status}: ${response.statusText}`);
+      }
+      
+      const rawText = await response.text();
+      let data;
+      try {
+        data = JSON.parse(rawText);
+      } catch (jsonErr) {
+        console.warn('Parsing error:', jsonErr, 'Raw respond was:', rawText);
+        // Look for typical Google Apps Script exceptions inside HTML responses
+        if (rawText.includes('<!DOCTYPE html>') || rawText.includes('<html') || rawText.includes('Exception:')) {
+          const exceptionMatch = rawText.match(/Exception:[^<]+/);
+          if (exceptionMatch) {
+            throw new Error(`Google Apps Script Error: "${exceptionMatch[0]}"`);
+          } else if (rawText.includes('Script fungsi tidak ditemukan') || rawText.includes('Script function not found') || rawText.includes('doGet')) {
+            throw new Error(`Fungsi doGet(e) tidak ditemukan di kode script Anda. Pastikan Anda menulis function doGet(e) { ... } di script.`);
+          } else {
+            // strip HTML tags to get human-readable error if small
+            const cleanText = rawText.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+            const sliceText = cleanText.length > 180 ? `${cleanText.substring(0, 180)}...` : cleanText;
+            throw new Error(`Apps Script Mengalami Error Internal: "${sliceText}"`);
+          }
+        }
+        throw new Error(`Sistem Apps Script memberi balasan teks biasa dan bukan JSON: "${rawText.substring(0, 120)}..."`);
+      }
+      
+      if (data && data.status === 'sukses') {
         const emailLower = trimmedEmail.toLowerCase().trim();
         localStorage.setItem('japri_user_email', trimmedEmail);
         
-        if (typeof data.used === 'number') {
-          setGenerationCount(data.used);
-          localStorage.setItem(`gen_count_${emailLower}`, data.used.toString());
+        const usedVal = data.used !== undefined && data.used !== null ? parseInt(data.used.toString(), 10) : NaN;
+        if (!isNaN(usedVal)) {
+          setGenerationCount(usedVal);
+          localStorage.setItem(`gen_count_${emailLower}`, usedVal.toString());
         }
-        if (typeof data.limit === 'number') {
-          setGenerationLimit(data.limit);
-          localStorage.setItem(`gen_limit_${emailLower}`, data.limit.toString());
+        
+        const limitVal = data.limit !== undefined && data.limit !== null ? parseInt(data.limit.toString(), 10) : NaN;
+        if (!isNaN(limitVal)) {
+          setGenerationLimit(limitVal);
+          localStorage.setItem(`gen_limit_${emailLower}`, limitVal.toString());
         }
         setUserEmail(trimmedEmail);
       } else {
-        setLoginError('Akses ditolak: Alamat email Anda belum terdaftar di database Japri Studio.');
+        // Email not found or access denied inside sheet database
+        const errMsg = data?.pesan || data?.message || 'Alamat email Anda belum terdaftar di database Japri Studio.';
+        setLoginError(`Akses Ditolak: ${errMsg}`);
       }
-    } catch (e) {
-      console.error(e);
-      setLoginError('Gagal terkoneksi ke Google Apps Script. Pastikan URL Web App Anda benar, di-Deploy sebagai "Anyone", dan Anda mengizinkan CORS.');
+    } catch (e: any) {
+      console.error('Login failed with error:', e);
+      const errMessage = e?.message || String(e);
+      let solutionTip = 'Pastikan URL sudah benar. Klik tombol roda gigi pengaturan ⚙️ di kanan atas panel masuk untuk memeriksa kembali URL Anda.';
+      
+      if (errMessage.includes('Failed to fetch') || errMessage.includes('NetworkError') || errMessage.includes('TypeError')) {
+        solutionTip = 'Pastikan Anda telah men-deploy ulang script Anda di Google Apps Script editor dengan memilih "Deploy -> New Deployment", isi deskripsi bebas, lalu pastikan "Who has access" diset ke "Anyone", lalu salin URL Web App yang baru tersebut ke pengaturan aplikasi ini.';
+      } else if (errMessage.includes('Google Apps Script Error') || errMessage.includes('Error Internal')) {
+        solutionTip = 'Error ini berasal dari dalam kode Google Apps Script Anda (misalnya: ID Spreadsheet salah, atau Sheet bernama "Data" / "Sheet1" tidak ditemukan). Silahkan buka Editor Apps Script Anda dan cek log eksekusi/Execution Logs.';
+      }
+      
+      setLoginError(
+        `Gagal Terkoneksi!\n\n` +
+        `• URL Terhubung: ${appsScriptUrl}\n\n` +
+        `• Pesan Error: ${errMessage}\n\n` +
+        `💡 Solusi: ${solutionTip}`
+      );
     } finally {
       setLoginLoading(false);
     }
@@ -875,14 +934,82 @@ function App() {
           </div>
 
           <div className="bg-white dark:bg-slate-900 border border-gray-100 dark:border-slate-800 rounded-3xl p-6 md:p-8 shadow-xl shadow-slate-100 dark:shadow-none space-y-6">
-            <div className="space-y-2">
-              <h2 className="text-lg font-bold text-slate-800 dark:text-slate-200">
-                Silahkan Masuk
-              </h2>
-              <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed font-sans">
-                Untuk bantuan hubungi admin di 081321910880
-              </p>
+            <div className="flex justify-between items-start gap-3">
+              <div className="space-y-1.5 flex-1">
+                <h2 className="text-lg font-bold text-slate-800 dark:text-slate-200">
+                  Silahkan Masuk
+                </h2>
+                <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed font-sans">
+                  Untuk bantuan hubungi admin di 081321910880
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowConfig(!showConfig)}
+                title="Google Apps Script Settings"
+                className={`p-2 rounded-xl border transition-all shrink-0 ${
+                  showConfig 
+                    ? 'bg-neon/10 text-neon border-neon/20' 
+                    : 'border-slate-100 dark:border-slate-800 text-slate-400 hover:text-neon hover:bg-slate-50 dark:hover:bg-slate-800/50'
+                }`}
+              >
+                <Settings size={18} className={`transition-transform duration-300 ${showConfig ? 'rotate-90' : ''}`} />
+              </button>
             </div>
+
+            {showConfig && (
+              <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-900/50 border border-slate-100 dark:border-slate-800 text-left space-y-3 antialiased">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                    Konfigurasi Web App URL
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      localStorage.removeItem('japri_apps_script_url');
+                      setAppsScriptUrl('https://script.google.com/macros/s/AKfycbwa5LEvFi7lMIsh75qpeB4FUjmOQHgpAzW7ar-29B0rL4NoEhVxHU93c4SNEEW70ESn/exec');
+                      alert('Mengembalikan ke Web App bawaan sistem!');
+                    }}
+                    className="text-[10px] text-red-500 hover:underline font-semibold"
+                  >
+                    Reset Bawaan
+                  </button>
+                </div>
+                
+                <div className="space-y-1.5">
+                  <p className="text-[10px] text-slate-500 leading-normal">
+                    Jika Anda deploy script baru ke Google Apps Script, tempel alamat URL Web App Anda (diakhiri /exec) di bawah ini:
+                  </p>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      placeholder="https://script.google.com/macros/s/..."
+                      defaultValue={appsScriptUrl}
+                      id="custom_apps_script_url"
+                      className="flex-1 px-3 py-2 text-xs rounded-xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-neon font-sans"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const val = (document.getElementById('custom_apps_script_url') as HTMLInputElement)?.value;
+                        if (val) {
+                          handleSaveAndTestUrl(val);
+                        }
+                      }}
+                      className="px-3 py-2 text-xs font-bold rounded-xl bg-neon hover:bg-neon-hover text-white transition-all shadow-sm shrink-0"
+                    >
+                      Simpan
+                    </button>
+                  </div>
+                </div>
+                
+                <div className="p-2 border border-blue-100/50 dark:border-blue-900/20 bg-blue-50/20 dark:bg-blue-950/10 rounded-xl">
+                  <p className="text-[9px] text-blue-600 dark:text-blue-400 font-medium leading-relaxed">
+                    💡 <strong>PENTING:</strong> Pastikan script Anda memiliki fungsi <code>doGet(e)</code>, di-deploy sebagai <strong>"Web App"</strong>, <strong>"Execute as: Me"</strong>, dan <strong>"Who has access: Anyone"</strong> agar tidak terhalang CORS.
+                  </p>
+                </div>
+              </div>
+            )}
 
             <form onSubmit={(e) => {
               e.preventDefault();
@@ -904,7 +1031,7 @@ function App() {
               </div>
 
               {loginError && (
-                <div className="p-3 text-xs text-red-500 bg-red-50 dark:bg-red-950/20 border border-red-100 dark:border-red-900/30 rounded-xl leading-relaxed font-semibold">
+                <div className="p-4 text-xs text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/20 border border-red-100 dark:border-red-900/30 rounded-xl leading-relaxed font-medium whitespace-pre-wrap select-text text-left">
                   {loginError}
                 </div>
               )}
