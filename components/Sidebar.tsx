@@ -14,12 +14,16 @@ interface SidebarProps {
   onClose?: () => void;
   isDarkMode: boolean;
   onToggleTheme: () => void;
-  generationCount: number;
-  generationLimit: number;
-  onResetQuota: () => void;
+  coinBalance: number;
+  freeLeft: number;
+  imagePrice: number;
+  ownKey: boolean;
+  walletUrl: string;
   userEmail: string;
   onLogout: () => void;
 }
+
+const fmt = (n: number) => n.toLocaleString('id-ID', { maximumFractionDigits: 1 });
 
 // Group Definition
 interface MenuGroup {
@@ -42,9 +46,11 @@ const Sidebar: React.FC<SidebarProps> = ({
   onClose, 
   isDarkMode, 
   onToggleTheme,
-  generationCount,
-  generationLimit,
-  onResetQuota,
+  coinBalance,
+  freeLeft,
+  imagePrice,
+  ownKey,
+  walletUrl,
   userEmail,
   onLogout
 }) => {
@@ -220,32 +226,27 @@ const Sidebar: React.FC<SidebarProps> = ({
             })}
           </nav>
 
-          {/* Quota Usage Component */}
-          <div className="px-4 py-3 mx-3 mb-2 rounded-xl border border-gray-100 dark:border-slate-800 bg-gray-50/50 dark:bg-slate-900/50 shrink-0">
-             <div className="flex items-center justify-between mb-1.5">
-                <div className="flex items-center gap-1.5 text-xs font-bold text-slate-700 dark:text-slate-300">
-                   <span>Kuota Generate Gambar</span>
-                </div>
+          {/* Saldo Koin Japri */}
+          <div className="px-4 py-3 mx-3 mb-2 rounded-xl border border-gray-100 dark:border-slate-800 bg-gray-50/50 dark:bg-slate-900/50 shrink-0 space-y-2">
+             <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-slate-700 dark:text-slate-300">Saldo Koin</span>
+                <span className={`text-sm font-black font-mono ${!ownKey && coinBalance < imagePrice ? 'text-red-500' : 'text-neon'}`}>
+                  {fmt(coinBalance)}
+                </span>
              </div>
-             
-             {/* Progress Bar Container */}
-             <div className="w-full h-2 rounded-full bg-slate-200 dark:bg-slate-800 overflow-hidden mb-1.5 relative">
-                <div 
-                  className={`h-full rounded-full transition-all duration-500 ease-out ${
-                    generationCount >= generationLimit 
-                      ? 'bg-red-500' 
-                      : generationCount >= Math.floor(generationLimit * 0.8) 
-                        ? 'bg-amber-500' 
-                        : 'bg-neon'
-                  }`} 
-                  style={{ width: `${Math.min(100, (generationCount / (generationLimit || 1)) * 100)}%` }}
-                />
+             <div className="text-[10px] text-slate-500 dark:text-slate-400 font-medium leading-relaxed">
+                {ownKey
+                  ? 'Memakai API key Gemini kamu sendiri — tidak memotong koin.'
+                  : <>1 gambar = {fmt(imagePrice)} koin{freeLeft > 0 ? <> · gratis hari ini tersisa {fmt(freeLeft)}</> : null}</>}
              </div>
-             
-             <div className="flex items-center justify-between text-[10px] text-slate-500 dark:text-slate-400 font-medium font-mono">
-                <span>{generationCount} dari {generationLimit} digunakan</span>
-                <span>Reset harian</span>
-             </div>
+             <a
+               href={walletUrl}
+               target="_blank"
+               rel="noopener noreferrer"
+               className="block w-full py-2 rounded-lg bg-neon hover:bg-neon-hover text-white text-xs font-bold text-center transition-colors"
+             >
+               Top-up Koin
+             </a>
           </div>
 
           {/* Theme Toggle Button (Sidebar Bottom) */}

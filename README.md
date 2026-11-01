@@ -1,20 +1,22 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://ai.google.dev/static/site-assets/images/share-ais-513315318.png" />
-</div>
+# Japri Studio
 
-# Run and deploy your AI Studio app
+AI Image Creator (studio.japri.web.id, di-deploy di Vercel).
 
-This contains everything you need to run your app locally.
+## Cara kerja login & koin
 
-View your app in AI Studio: https://ai.studio/apps/37badd66-66f7-4a9b-809d-0c0e7978021b
+- Login memakai **akun Japri** (sama dengan Japri Konten, `konten.japri.web.id`).
+- Browser **tidak pernah** memegang API key Gemini. Semua panggilan Gemini lewat
+  `https://konten.japri.web.id/api/js/gemini/...`; server menambahkan key platform dan
+  memotong koin dari dompet Japri (koin gratis harian dulu, lalu saldo beli).
+  Koin dikembalikan otomatis kalau generate gagal.
+- Top-up koin di halaman `/wallet` Japri Konten (Midtrans).
+- Backend: `levd-dev/dashboard/routes/japri_studio_routes.py`.
 
-## Run Locally
+## Development
 
-**Prerequisites:**  Node.js
+1. `npm install`
+2. Opsional: salin `.env.example` ke `.env.local` dan ubah `VITE_JAPRI_API_URL`.
+   Origin dev (mis. `http://localhost:3000`) harus ditambahkan ke `JAPRI_STUDIO_ORIGINS` di server.
+3. `npm run dev`
 
-
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+**Jangan** menaruh `GEMINI_API_KEY` di env Vite/Vercel — semua yang dibaca Vite ikut ke bundle publik.

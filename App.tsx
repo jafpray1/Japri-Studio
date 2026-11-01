@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Menu, Settings } from 'lucide-react';
+import { Menu } from 'lucide-react';
 import Sidebar from './components/Sidebar';
 import Dashboard from './components/Dashboard';
 import InputPanel from './components/InputPanel';
@@ -44,6 +44,9 @@ import {
   generateIdolImage,
   generateRemoveBgImage
 } from './services/geminiService';
+import { API_BASE, JAPRI_EVENT, JapriEventDetail, JapriUser, fetchMe, getToken, login, logout } from './services/japriApi';
+
+const formatCoins = (n: number) => n.toLocaleString('id-ID', { maximumFractionDigits: 1 });
 
 function App() {
   const [currentMode, setCurrentMode] = useState<AppMode>(AppMode.DASHBOARD);
@@ -148,161 +151,68 @@ function App() {
   const [ugcCustomImage, setUgcCustomImage] = useState<UploadedImage | null>(null);
   const [ugcCustomPrompt, setUgcCustomPrompt] = useState('');
 
-  // User and Google Apps Script states
-  const [userEmail, setUserEmail] = useState<string>(() => {
-    try {
-      return localStorage.getItem('japri_user_email') || '';
-    } catch (e) {
-      return '';
-    }
-  });
+  // Akun Japri + saldo koin (backend Japri Konten). Saldo dipotong di server per panggilan Gemini.
+  const [user, setUser] = useState<JapriUser | null>(null);
+  const [authChecking, setAuthChecking] = useState<boolean>(() => !!getToken());
+  const [topupNotice, setTopupNotice] = useState<string>('');
+  const userEmail = user?.email || user?.username || '';
 
-  const [appsScriptUrl, setAppsScriptUrl] = useState<string>(() => {
+  const refreshBalance = React.useCallback(async () => {
+    if (!getToken()) return;
     try {
-      const newUrl = 'https://script.google.com/macros/s/AKfycbwa5LEvFi7lMIsh75qpeB4FUjmOQHgpAzW7ar-29B0rL4NoEhVxHU93c4SNEEW70ESn/exec';
-      const outdatedDefaults = [
-        'https://script.google.com/macros/s/AKfycbwzxQmTVWoQ96jYooQNS9q-JDjFCaAfUHlmO-hx9pnYJ8riycA26V52nYsMrigO8AnU/exec',
-        'https://script.google.com/macros/s/AKfycbwqhgQI9uwB8zlixWTGGqWHqGpzwgXMeH-ml7Jv6RCXIphtjPQLifb7_TaB23_lwm5v/exec',
-        'https://script.google.com/macros/s/AKfycbyMp0mz2I9DKAfmoH8zkeqfJv4uZWOuqSd3oBKN_FMDlBhHB7iX00_i7KZXqrHdJSjd/exec',
-        'https://script.google.com/macros/s/AKfycbwcq7HaM6Cu65jtMYqScgiNt4YX7SlYcOv4_I7VG4DEcnEsvyGZOCvwjyoBNGHUYUHo/exec'
-      ];
-      let stored = localStorage.getItem('japri_apps_script_url') || '';
-      
-      // Jika url tersimpan adalah url sistem bawaan yang lama, update ke url yang baru
-      if (stored && outdatedDefaults.some(old => stored === old || stored.trim() === old)) {
-        localStorage.setItem('japri_apps_script_url', newUrl);
-        stored = newUrl;
+      setUser(await fetchMe());
+    } catch (e: any) {
+      if (e?.status === 401) {
+        logout();
+        setUser(null);
       }
-      return stored || import.meta.env.VITE_APPS_SCRIPT_URL || newUrl;
-    } catch (e) {
-      return 'https://script.google.com/macros/s/AKfycbwa5LEvFi7lMIsh75qpeB4FUjmOQHgpAzW7ar-29B0rL4NoEhVxHU93c4SNEEW70ESn/exec';
     }
-  });
-
-  // Daily limit state dependent on the logged in user's email
-  const [generationCount, setGenerationCount] = useState<number>(0);
-  const [generationLimit, setGenerationLimit] = useState<number>(10);
-
-  const fetchQuotaStatus = async (email: string) => {
-    if (!email || !appsScriptUrl) return;
-    try {
-      const response = await fetch(`${appsScriptUrl}?email=${encodeURIComponent(email)}`);
-      const data = await response.json();
-      if (data.status === 'sukses') {
-        const emailLower = email.toLowerCase().trim();
-        
-        const usedVal = data.used !== undefined && data.used !== null ? parseInt(data.used.toString(), 10) : NaN;
-        if (!isNaN(usedVal)) {
-          setGenerationCount(usedVal);
-          localStorage.setItem(`gen_count_${emailLower}`, usedVal.toString());
-        }
-        
-        const limitVal = data.limit !== undefined && data.limit !== null ? parseInt(data.limit.toString(), 10) : NaN;
-        if (!isNaN(limitVal)) {
-          setGenerationLimit(limitVal);
-          localStorage.setItem(`gen_limit_${emailLower}`, limitVal.toString());
-        }
-      }
-    } catch (e) {
-      console.warn('Gagal memuat kuota langsung dari Apps Script, menggunakan cache lokal:', e);
-    }
-  };
+  }, []);
 
   React.useEffect(() => {
-    if (!userEmail) {
-      setGenerationCount(0);
-      setGenerationLimit(10);
-      return;
-    }
-    try {
-      const today = new Date().toDateString();
-      const emailLower = userEmail.toLowerCase().trim();
-      const storedDate = localStorage.getItem(`gen_date_${emailLower}`);
-      const storedLimit = localStorage.getItem(`gen_limit_${emailLower}`);
-      
-      if (storedLimit) {
-        setGenerationLimit(parseInt(storedLimit, 10));
-      } else {
-        setGenerationLimit(10);
-      }
+    if (!getToken()) return;
+    fetchMe()
+      .then(setUser)
+      .catch((e) => { if (e?.status === 401) logout(); })
+      .finally(() => setAuthChecking(false));
+  }, []);
 
-      if (storedDate !== today) {
-        localStorage.setItem(`gen_date_${emailLower}`, today);
-        localStorage.setItem(`gen_count_${emailLower}`, '0');
-        setGenerationCount(0);
-      } else {
-        const val = localStorage.getItem(`gen_count_${emailLower}`);
-        setGenerationCount(val ? parseInt(val, 10) : 0);
+  React.useEffect(() => {
+    let timer: number | undefined;
+    const onEvent = (ev: Event) => {
+      const detail = (ev as CustomEvent<JapriEventDetail>).detail;
+      if (detail.type === 'unauthenticated') {
+        logout();
+        setUser(null);
+        return;
       }
-    } catch (e) {
-      // Ignore
-    }
-
-    // Ambil data terbaru langsung dari Google Sheet via Apps Script
-    fetchQuotaStatus(userEmail);
-  }, [userEmail, appsScriptUrl]);
+      if (detail.type === 'insufficient') setTopupNotice(detail.message || 'Saldo koin tidak cukup.');
+      // Satu generate = beberapa panggilan paralel → cukup satu kali segarkan saldo.
+      window.clearTimeout(timer);
+      timer = window.setTimeout(refreshBalance, 800);
+    };
+    window.addEventListener(JAPRI_EVENT, onEvent);
+    return () => {
+      window.removeEventListener(JAPRI_EVENT, onEvent);
+      window.clearTimeout(timer);
+    };
+  }, [refreshBalance]);
 
   const isWithinLimit = (): boolean => {
-    if (!userEmail) {
+    if (!user) {
       alert("Harap login terlebih dahulu.");
       return false;
     }
-    if (generationCount >= generationLimit) {
-      alert(`⚠️ Kuota Harian Tercapai!\nSobat Japri telah menggunakan batas maksimum ${generationLimit} generate gambar per hari. Silahkan hubungi admin di 081321910880 untuk penambahan kuota harian!`);
+    if (!user.own_key && user.balance < user.prices.image) {
+      setTopupNotice(`Saldo koin kamu ${formatCoins(user.balance)}, sedangkan 1 gambar butuh ${formatCoins(user.prices.image)} koin.`);
       return false;
     }
     return true;
   };
 
-  const incrementGeneration = async (count = 1) => {
-    if (!userEmail) return;
-    const emailLower = userEmail.toLowerCase().trim();
-    
-    // Desentralisasikan peningkatan local state untuk kenyamanan instan user
-    const targetCount = generationCount + count;
-    setGenerationCount(targetCount);
-    try {
-      const today = new Date().toDateString();
-      localStorage.setItem(`gen_date_${emailLower}`, today);
-      localStorage.setItem(`gen_count_${emailLower}`, targetCount.toString());
-    } catch (e) {
-      // Ignored
-    }
-
-    // Post/Update ke Google Sheet via Apps Script secara asynchronous
-    if (appsScriptUrl) {
-      try {
-        const response = await fetch(`${appsScriptUrl}?action=inc&email=${encodeURIComponent(emailLower)}`);
-        const data = await response.json();
-        if (data.status === 'sukses') {
-          const usedVal = data.used !== undefined && data.used !== null ? parseInt(data.used.toString(), 10) : NaN;
-          if (!isNaN(usedVal)) {
-            setGenerationCount(usedVal);
-            localStorage.setItem(`gen_count_${emailLower}`, usedVal.toString());
-          }
-          const limitVal = data.limit !== undefined && data.limit !== null ? parseInt(data.limit.toString(), 10) : NaN;
-          if (!isNaN(limitVal)) {
-            setGenerationLimit(limitVal);
-            localStorage.setItem(`gen_limit_${emailLower}`, limitVal.toString());
-          }
-        }
-      } catch (e) {
-        console.error('Gagal memperbarui kuota ke Google Sheet:', e);
-      }
-    }
-  };
-
-  const resetQuota = async () => {
-    if (!userEmail) return;
-    const emailLower = userEmail.toLowerCase().trim();
-    try {
-      const today = new Date().toDateString();
-      localStorage.setItem(`gen_date_${emailLower}`, today);
-      localStorage.setItem(`gen_count_${emailLower}`, '0');
-      setGenerationCount(0);
-    } catch (e) {
-      // Ignored
-    }
+  // Pemotongan koin terjadi di server; di sini cukup segarkan tampilan saldo.
+  const incrementGeneration = (_count = 1) => {
+    refreshBalance();
   };
 
   const toggleTheme = () => {
@@ -793,130 +703,39 @@ function App() {
 
   const showSharedResultPanel = currentMode !== AppMode.UGC && currentMode !== AppMode.DASHBOARD && currentMode !== AppMode.EDIT && currentMode !== AppMode.CHAT; // Hide ResultPanel for Chat
 
-  // Handle Apps Script login verification
+  // Login akun Japri (sama dengan Japri Konten)
   const [loginLoading, setLoginLoading] = useState(false);
   const [loginError, setLoginError] = useState('');
-  const [showConfig, setShowConfig] = useState(false);
 
-  const handleLogin = async (emailToLogin: string) => {
-    const trimmedEmail = emailToLogin.trim();
-    if (!trimmedEmail) {
-      setLoginError('Harap masukkan alamat email.');
+  const handleLogin = async (identifier: string, password: string) => {
+    if (!identifier.trim() || !password) {
+      setLoginError('Isi username/email dan password akun Japri.');
       return;
     }
-    
-    // Check if AppScript URL is configured
-    if (!appsScriptUrl) {
-      setLoginError('');
-      try {
-        localStorage.setItem('japri_user_email', trimmedEmail);
-        setUserEmail(trimmedEmail);
-        alert(`ℹ️ Demo Mode: Berhasil masuk sebagai ${trimmedEmail}.\n\n(Anda belum mengisi URL Google Apps Script. Di lingkungan demo, email apapun diperbolehkan. Pasang URL Apps Script di tombol pengaturan di bawah jika ingin membatasi sesuai data Google Sheet!)`);
-      } catch (e) {
-        // block error
-      }
-      return;
-    }
-
     setLoginLoading(true);
     setLoginError('');
     try {
-      const cleanUrl = appsScriptUrl.trim();
-      // Ensure the URL is correctly set up as a standard doGet query
-      const targetQuery = `${cleanUrl}${cleanUrl.includes('?') ? '&' : '?'}email=${encodeURIComponent(trimmedEmail)}`;
-      
-      const response = await fetch(targetQuery);
-      if (!response.ok) {
-        throw new Error(`Koneksi HTTP Error ${response.status}: ${response.statusText}`);
-      }
-      
-      const rawText = await response.text();
-      let data;
-      try {
-        data = JSON.parse(rawText);
-      } catch (jsonErr) {
-        console.warn('Parsing error:', jsonErr, 'Raw respond was:', rawText);
-        // Look for typical Google Apps Script exceptions inside HTML responses
-        if (rawText.includes('<!DOCTYPE html>') || rawText.includes('<html') || rawText.includes('Exception:')) {
-          const exceptionMatch = rawText.match(/Exception:[^<]+/);
-          if (exceptionMatch) {
-            throw new Error(`Google Apps Script Error: "${exceptionMatch[0]}"`);
-          } else if (rawText.includes('Script fungsi tidak ditemukan') || rawText.includes('Script function not found') || rawText.includes('doGet')) {
-            throw new Error(`Fungsi doGet(e) tidak ditemukan di kode script Anda. Pastikan Anda menulis function doGet(e) { ... } di script.`);
-          } else {
-            // strip HTML tags to get human-readable error if small
-            const cleanText = rawText.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
-            const sliceText = cleanText.length > 180 ? `${cleanText.substring(0, 180)}...` : cleanText;
-            throw new Error(`Apps Script Mengalami Error Internal: "${sliceText}"`);
-          }
-        }
-        throw new Error(`Sistem Apps Script memberi balasan teks biasa dan bukan JSON: "${rawText.substring(0, 120)}..."`);
-      }
-      
-      if (data && data.status === 'sukses') {
-        const emailLower = trimmedEmail.toLowerCase().trim();
-        localStorage.setItem('japri_user_email', trimmedEmail);
-        
-        const usedVal = data.used !== undefined && data.used !== null ? parseInt(data.used.toString(), 10) : NaN;
-        if (!isNaN(usedVal)) {
-          setGenerationCount(usedVal);
-          localStorage.setItem(`gen_count_${emailLower}`, usedVal.toString());
-        }
-        
-        const limitVal = data.limit !== undefined && data.limit !== null ? parseInt(data.limit.toString(), 10) : NaN;
-        if (!isNaN(limitVal)) {
-          setGenerationLimit(limitVal);
-          localStorage.setItem(`gen_limit_${emailLower}`, limitVal.toString());
-        }
-        setUserEmail(trimmedEmail);
-      } else {
-        // Email not found or access denied inside sheet database
-        const errMsg = data?.pesan || data?.message || 'Alamat email Anda belum terdaftar di database Japri Studio.';
-        setLoginError(`Akses Ditolak: ${errMsg}`);
-      }
+      setUser(await login(identifier.trim(), password));
     } catch (e: any) {
-      console.error('Login failed with error:', e);
-      const errMessage = e?.message || String(e);
-      let solutionTip = 'Pastikan URL sudah benar. Klik tombol roda gigi pengaturan ⚙️ di kanan atas panel masuk untuk memeriksa kembali URL Anda.';
-      
-      if (errMessage.includes('Failed to fetch') || errMessage.includes('NetworkError') || errMessage.includes('TypeError')) {
-        solutionTip = 'Pastikan Anda telah men-deploy ulang script Anda di Google Apps Script editor dengan memilih "Deploy -> New Deployment", isi deskripsi bebas, lalu pastikan "Who has access" diset ke "Anyone", lalu salin URL Web App yang baru tersebut ke pengaturan aplikasi ini.';
-      } else if (errMessage.includes('Google Apps Script Error') || errMessage.includes('Error Internal')) {
-        solutionTip = 'Error ini berasal dari dalam kode Google Apps Script Anda (misalnya: ID Spreadsheet salah, atau Sheet bernama "Data" / "Sheet1" tidak ditemukan). Silahkan buka Editor Apps Script Anda dan cek log eksekusi/Execution Logs.';
-      }
-      
-      setLoginError(
-        `Gagal Terkoneksi!\n\n` +
-        `• URL Terhubung: ${appsScriptUrl}\n\n` +
-        `• Pesan Error: ${errMessage}\n\n` +
-        `💡 Solusi: ${solutionTip}`
-      );
+      setLoginError(e?.message || String(e));
     } finally {
       setLoginLoading(false);
     }
   };
 
   const handleLogout = () => {
-    try {
-      localStorage.removeItem('japri_user_email');
-      setUserEmail('');
-    } catch (e) {
-      // Ignore
-    }
+    logout();
+    setUser(null);
   };
 
-  const handleSaveAndTestUrl = (url: string) => {
-    try {
-      const cleanUrl = url.trim();
-      localStorage.setItem('japri_apps_script_url', cleanUrl);
-      setAppsScriptUrl(cleanUrl);
-      alert('URL Google Apps Script berhasil disimpan!');
-    } catch (e) {
-      // Ignore
+  if (!user) {
+    if (authChecking) {
+      return (
+        <div className="flex min-h-screen w-screen items-center justify-center bg-gray-50 dark:bg-slate-950 text-sm text-slate-500 dark:text-slate-400">
+          Memuat akun...
+        </div>
+      );
     }
-  };
-
-  if (!userEmail) {
     return (
       <div className="flex min-h-screen w-screen items-center justify-center bg-gray-50 dark:bg-slate-950 px-4 transition-colors duration-300">
         <div className="w-full max-w-md space-y-6">
@@ -934,98 +753,42 @@ function App() {
           </div>
 
           <div className="bg-white dark:bg-slate-900 border border-gray-100 dark:border-slate-800 rounded-3xl p-6 md:p-8 shadow-xl shadow-slate-100 dark:shadow-none space-y-6">
-            <div className="flex justify-between items-start gap-3">
-              <div className="space-y-1.5 flex-1">
-                <h2 className="text-lg font-bold text-slate-800 dark:text-slate-200">
-                  Silahkan Masuk
-                </h2>
-                <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed font-sans">
-                  Untuk bantuan hubungi admin di 081321910880
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowConfig(!showConfig)}
-                title="Google Apps Script Settings"
-                className={`p-2 rounded-xl border transition-all shrink-0 ${
-                  showConfig 
-                    ? 'bg-neon/10 text-neon border-neon/20' 
-                    : 'border-slate-100 dark:border-slate-800 text-slate-400 hover:text-neon hover:bg-slate-50 dark:hover:bg-slate-800/50'
-                }`}
-              >
-                <Settings size={18} className={`transition-transform duration-300 ${showConfig ? 'rotate-90' : ''}`} />
-              </button>
+            <div className="space-y-1.5">
+              <h2 className="text-lg font-bold text-slate-800 dark:text-slate-200">
+                Masuk dengan Akun Japri
+              </h2>
+              <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed font-sans">
+                Pakai akun yang sama dengan Japri Konten. Generate gambar memakai koin dari dompet Japri kamu.
+              </p>
             </div>
-
-            {showConfig && (
-              <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-900/50 border border-slate-100 dark:border-slate-800 text-left space-y-3 antialiased">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-slate-700 dark:text-slate-300">
-                    Konfigurasi Web App URL
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      localStorage.removeItem('japri_apps_script_url');
-                      setAppsScriptUrl('https://script.google.com/macros/s/AKfycbwa5LEvFi7lMIsh75qpeB4FUjmOQHgpAzW7ar-29B0rL4NoEhVxHU93c4SNEEW70ESn/exec');
-                      alert('Mengembalikan ke Web App bawaan sistem!');
-                    }}
-                    className="text-[10px] text-red-500 hover:underline font-semibold"
-                  >
-                    Reset Bawaan
-                  </button>
-                </div>
-                
-                <div className="space-y-1.5">
-                  <p className="text-[10px] text-slate-500 leading-normal">
-                    Jika Anda deploy script baru ke Google Apps Script, tempel alamat URL Web App Anda (diakhiri /exec) di bawah ini:
-                  </p>
-                  <div className="flex gap-2">
-                    <input
-                      type="text"
-                      placeholder="https://script.google.com/macros/s/..."
-                      defaultValue={appsScriptUrl}
-                      id="custom_apps_script_url"
-                      className="flex-1 px-3 py-2 text-xs rounded-xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-neon font-sans"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const val = (document.getElementById('custom_apps_script_url') as HTMLInputElement)?.value;
-                        if (val) {
-                          handleSaveAndTestUrl(val);
-                        }
-                      }}
-                      className="px-3 py-2 text-xs font-bold rounded-xl bg-neon hover:bg-neon-hover text-white transition-all shadow-sm shrink-0"
-                    >
-                      Simpan
-                    </button>
-                  </div>
-                </div>
-                
-                <div className="p-2 border border-blue-100/50 dark:border-blue-900/20 bg-blue-50/20 dark:bg-blue-950/10 rounded-xl">
-                  <p className="text-[9px] text-blue-600 dark:text-blue-400 font-medium leading-relaxed">
-                    💡 <strong>PENTING:</strong> Pastikan script Anda memiliki fungsi <code>doGet(e)</code>, di-deploy sebagai <strong>"Web App"</strong>, <strong>"Execute as: Me"</strong>, dan <strong>"Who has access: Anyone"</strong> agar tidak terhalang CORS.
-                  </p>
-                </div>
-              </div>
-            )}
 
             <form onSubmit={(e) => {
               e.preventDefault();
               const formData = new FormData(e.currentTarget);
-              const emailValue = formData.get('email') as string;
-              handleLogin(emailValue);
+              handleLogin(String(formData.get('identifier') || ''), String(formData.get('password') || ''));
             }} className="space-y-4">
               <div className="space-y-1.5">
                 <label className="text-xs font-semibold text-slate-600 dark:text-slate-400">
-                  Alamat Email (Terdaftar)
+                  Username atau Email
                 </label>
                 <input
-                  name="email"
-                  type="email"
+                  name="identifier"
+                  type="text"
                   required
-                  placeholder="masukkan@email.com"
+                  autoComplete="username"
+                  placeholder="username atau email@contoh.com"
+                  className="w-full p-3.5 rounded-xl border border-gray-200 dark:border-slate-700 text-sm focus:outline-none focus:ring-2 focus:ring-neon bg-gray-50 dark:bg-slate-800/50 text-slate-800 dark:text-slate-200 font-sans"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-slate-600 dark:text-slate-400">
+                  Password
+                </label>
+                <input
+                  name="password"
+                  type="password"
+                  required
+                  autoComplete="current-password"
                   className="w-full p-3.5 rounded-xl border border-gray-200 dark:border-slate-700 text-sm focus:outline-none focus:ring-2 focus:ring-neon bg-gray-50 dark:bg-slate-800/50 text-slate-800 dark:text-slate-200 font-sans"
                 />
               </div>
@@ -1041,19 +804,18 @@ function App() {
                 disabled={loginLoading}
                 className="w-full py-3.5 px-4 rounded-xl bg-neon hover:bg-neon-hover text-white font-bold text-sm shadow-md shadow-neon/10 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
               >
-                {loginLoading ? (
-                  <>
-                    <svg className="animate-spin h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                    </svg>
-                    Memverifikasi...
-                  </>
-                ) : (
-                  'Masuk ke Studio'
-                )}
+                {loginLoading ? 'Memverifikasi...' : 'Masuk ke Studio'}
               </button>
             </form>
+
+            <p className="text-xs text-center text-slate-500 dark:text-slate-400">
+              Belum punya akun?{' '}
+              <a href={`${API_BASE}/register`} target="_blank" rel="noopener noreferrer" className="font-semibold text-neon hover:underline">
+                Daftar di Japri Konten
+              </a>
+              <br />
+              Bantuan: admin 081321910880
+            </p>
           </div>
         </div>
       </div>
@@ -1069,9 +831,11 @@ function App() {
         onToggleTheme={toggleTheme} 
         isOpen={isSidebarOpen}
         onClose={() => setIsSidebarOpen(false)}
-        generationCount={generationCount}
-        generationLimit={generationLimit}
-        onResetQuota={resetQuota}
+        coinBalance={user.balance}
+        freeLeft={user.free_left}
+        imagePrice={user.prices.image}
+        ownKey={user.own_key}
+        walletUrl={user.wallet_url}
         userEmail={userEmail}
         onLogout={handleLogout}
       />
@@ -1121,6 +885,35 @@ function App() {
           )}
         </div>
       </div>
+
+      {topupNotice && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4" onClick={() => setTopupNotice('')}>
+          <div className="w-full max-w-sm rounded-3xl bg-white dark:bg-slate-900 border border-gray-100 dark:border-slate-800 p-6 space-y-4 shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-lg font-bold text-slate-800 dark:text-slate-100">Saldo koin tidak cukup</h3>
+            <p className="text-sm text-slate-600 dark:text-slate-300 whitespace-pre-wrap">{topupNotice}</p>
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              1 gambar = {formatCoins(user.prices.image)} koin. Koin Japri Studio sama dengan dompet Japri Konten.
+            </p>
+            <div className="flex gap-2">
+              <a
+                href={user.wallet_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex-1 py-3 rounded-xl bg-neon hover:bg-neon-hover text-white font-bold text-sm text-center transition-all"
+              >
+                Top-up Koin
+              </a>
+              <button
+                type="button"
+                onClick={() => { setTopupNotice(''); refreshBalance(); }}
+                className="px-4 py-3 rounded-xl border border-gray-200 dark:border-slate-700 text-sm font-semibold text-slate-600 dark:text-slate-300"
+              >
+                Tutup
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <VideoPromptModal isOpen={videoPromptModalOpen} onClose={() => setVideoPromptModalOpen(false)} isLoading={videoPromptLoading} promptText={videoPromptText} />
     </div>

@@ -1,7 +1,38 @@
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenAI, GenerateContentParameters, GenerateContentResponse } from "@google/genai";
 import { AspectRatio, UploadedImage, FashionModelType, FashionAgeGroup, FashionStyle, MockupCategory } from '../types';
+import { GEMINI_PROXY_BASE, getToken, emitJapri } from './japriApi';
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+// SDK menaruh body error mentah ({"error":{"message":...}}) di e.message.
+function proxyMessage(e: any): string {
+  try {
+    return JSON.parse(e.message).error.message || e.message;
+  } catch {
+    return e?.message || 'Saldo koin tidak cukup.';
+  }
+}
+
+// Semua panggilan lewat proxy Japri Konten: key Gemini ada di server, setiap panggilan
+// memotong koin dari dompet Japri. apiKey di sini hanya pengisi (server mengabaikannya).
+const ai = {
+  models: {
+    generateContent: async (params: GenerateContentParameters): Promise<GenerateContentResponse> => {
+      const client = new GoogleGenAI({
+        apiKey: 'japri-proxy',
+        httpOptions: { baseUrl: GEMINI_PROXY_BASE, headers: { Authorization: `Bearer ${getToken()}` } },
+      });
+      try {
+        const response = await client.models.generateContent(params);
+        emitJapri({ type: 'used' });
+        return response;
+      } catch (e: any) {
+        if (e?.status === 402) emitJapri({ type: 'insufficient', message: proxyMessage(e) });
+        else if (e?.status === 401) emitJapri({ type: 'unauthenticated' });
+        else emitJapri({ type: 'used' });   // koin dikembalikan server; tetap segarkan saldo
+        throw e;
+      }
+    },
+  },
+};
 
 async function fileToGenerativePart(file: File): Promise<{ inlineData: { data: string; mimeType: string } }> {
   return new Promise((resolve, reject) => {
